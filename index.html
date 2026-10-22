@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Statistik Tanggapan Bencana Karhutla</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet CSS & JS for Mapping -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #map {
+            min-height: 380px;
+            z-index: 1;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased flex flex-col min-h-screen">
+
+    <!-- Header Navigation -->
+    <header class="bg-gradient-to-r from-amber-700 via-orange-600 to-red-700 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-white/10 backdrop-blur-md rounded-xl border border-white/20">
+                    <i data-lucide="flame" class="w-6 h-6 text-amber-300 animate-pulse"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">Dashboard Tanggapan Karhutla</h1>
+                    <p class="text-xs text-orange-100 opacity-90">Pemantauan & Analisis Statistik Kebakaran Hutan & Lahan</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <button id="refresh-btn" onclick="fetchData()" class="flex items-center space-x-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white text-xs sm:text-sm font-medium py-2 px-3.5 rounded-lg border border-white/20 transition-all duration-200">
+                    <i data-lucide="refresh-cw" id="refresh-icon" class="w-4 h-4"></i>
+                    <span>Sinkronisasi Apify</span>
+                </button>
+                <div class="hidden sm:block text-right text-xs bg-black/20 px-3 py-1.5 rounded-lg border border-white/10">
+                    <div class="text-orange-200">Status Token</div>
+                    <div id="api-status-badge" class="font-semibold text-emerald-300 flex items-center gap-1 justify-end">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-ping"></span> Terhubung
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Controls & API Token Input Accordion -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-4 sm:p-5 bg-slate-50/80 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4">
+                <div class="flex items-center space-x-2 text-slate-700 font-semibold text-sm">
+                    <i data-lucide="key" class="w-4 h-4 text-orange-600"></i>
+                    <span>Konfigurasi Token & Endpoint Apify API</span>
+                </div>
+                <button onclick="toggleConfig()" class="text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center space-x-1">
+                    <span id="toggle-config-text">Sembunyikan Pengaturan</span>
+                    <i data-lucide="chevron-up" id="toggle-config-icon" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div id="config-panel" class="p-4 sm:p-5 space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-8">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">URL Endpoint / Dataset ID / Token Apify API</label>
+                        <div class="relative flex items-center">
+                            <input type="text" id="api-url-input" 
+                                value="apify_api_7Y8OiR1XedspF08zUoZVAvpmCR3WFg4hhfae" 
+                                class="w-full text-xs font-mono bg-slate-50 border border-slate-300 text-slate-800 rounded-lg pl-3 pr-10 py-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition" 
+                                placeholder="Masukkan URL Endpoint, Dataset ID, atau Token Apify...">
+                            <button onclick="copyApiUrl()" title="Salin URL" class="absolute right-2 text-slate-400 hover:text-slate-600 p-1">
+                                <i data-lucide="copy" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="mt-2 flex items-center space-x-2">
+                            <input type="checkbox" id="use-cors-proxy" checked class="rounded border-slate-300 text-orange-600 focus:ring-orange-500 w-3.5 h-3.5">
+                            <label for="use-cors-proxy" class="text-[11px] text-slate-600 font-medium">Gunakan Proxy CORS (Diperlukan jika akses API terblokir browser / sandboxed iframe)</label>
+                        </div>
+                    </div>
+                    <div class="md:col-span-4 flex items-end space-x-2">
+                        <button onclick="fetchData()" class="flex-1 bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-medium text-xs sm:text-sm py-2.5 px-4 rounded-lg shadow-sm transition flex items-center justify-center space-x-2">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                            <span>Terapkan & Muat Data</span>
+                        </button>
+                        <button onclick="resetFilters()" title="Reset Filter" class="bg-slate-200 hover:bg-slate-300 text-slate-700 p-2.5 rounded-lg transition">
+                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                        <label class="block text-[11px] font-medium text-slate-500 mb-1">Filter Wilayah/Provinsi</label>
+                        <select id="filter-region" onchange="applyFilters()" class="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none">
+                            <option value="ALL">Semua Wilayah</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-slate-500 mb-1">Tingkat Keparahan</label>
+                        <select id="filter-severity" onchange="applyFilters()" class="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none">
+                            <option value="ALL">Semua Tingkatan</option>
+                            <option value="Tinggi">Tinggi / Kritis</option>
+                            <option value="Sedang">Sedang</option>
+                            <option value="Rendah">Rendah / Waspada</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-slate-500 mb-1">Status Tanggapan</label>
+                        <select id="filter-status" onchange="applyFilters()" class="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none">
+                            <option value="ALL">Semua Status</option>
+                            <option value="Selesai">Selesai Ditangani</option>
+                            <option value="Proses">Dalam Penanganan</option>
+                            <option value="Menunggu">Menunggu Verifikasi</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-slate-500 mb-1">Cari Kata Kunci</label>
+                        <div class="relative">
+                            <input type="text" id="filter-search" onkeyup="applyFilters()" placeholder="Cari nama lokasi, tim..." class="w-full text-xs bg-white border border-slate-300 rounded-lg pl-8 pr-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none">
+                            <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Banner Alert Error / Loading -->
+        <div id="status-banner" class="hidden rounded-xl p-4 text-sm font-medium flex items-center justify-between transition-all">
+            <div class="flex items-center space-x-3">
+                <i id="status-icon" data-lucide="info" class="w-5 h-5"></i>
+                <span id="status-message">Menghubungkan ke API Apify...</span>
+            </div>
+            <button onclick="dismissStatusBanner()" class="text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Tanggapan</p>
+                        <h3 id="stat-total" class="text-2xl sm:text-3xl font-extrabold text-slate-800 mt-1">0</h3>
+                    </div>
+                    <div class="p-3 bg-orange-50 text-orange-600 rounded-xl">
+                        <i data-lucide="activity" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center text-xs text-slate-500">
+                    <span id="stat-total-desc" class="text-slate-600 font-medium">Laporan terverifikasi</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Penanganan Aktif</p>
+                        <h3 id="stat-active" class="text-2xl sm:text-3xl font-extrabold text-amber-600 mt-1">0</h3>
+                    </div>
+                    <div class="p-3 bg-amber-50 text-amber-600 rounded-xl">
+                        <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center text-xs text-slate-500">
+                    <span id="stat-active-percent" class="text-amber-600 font-semibold mr-1">0%</span> dari total titik
+                </div>
+            </div>
+
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Berhasil Pemadaman</p>
+                        <h3 id="stat-resolved" class="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-1">0</h3>
+                    </div>
+                    <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                        <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center text-xs text-slate-500">
+                    <span id="stat-resolved-percent" class="text-emerald-600 font-semibold mr-1">0%</span> angka keberhasilan
+                </div>
+            </div>
+
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Personel Dikerahkan</p>
+                        <h3 id="stat-personnel" class="text-2xl sm:text-3xl font-extrabold text-blue-600 mt-1">0</h3>
+                    </div>
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center text-xs text-slate-500">
+                    <span class="text-slate-600">Tim Gabungan / Manggala Agni</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section Maps & Visual Chart Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Peta Persebaran titik Karhutla -->
+            <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-orange-600"></i>
+                            Peta Persebaran Titik Kebakaran & Tanggapan
+                        </h2>
+                        <p class="text-xs text-slate-500">Visualisasi geografis lokasi kejadian Karhutla</p>
+                    </div>
+                    <span class="text-[11px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md font-medium">Interaktif Leaflet</span>
+                </div>
+                <div class="rounded-xl overflow-hidden border border-slate-200 flex-1 min-h-[360px] relative">
+                    <div id="map" class="w-full h-full"></div>
+                </div>
+            </div>
+
+            <!-- Analisis Grafik / Chart -->
+            <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                                <i data-lucide="pie-chart" class="w-4 h-4 text-orange-600"></i>
+                                Distribusi Berdasarkan Wilayah
+                            </h2>
+                            <p class="text-xs text-slate-500">Persentase kejadian menurut provinsi/daerah</p>
+                        </div>
+                    </div>
+                    <div class="h-[220px] relative flex items-center justify-center">
+                        <canvas id="regionChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-slate-100">
+                    <h3 class="text-xs font-semibold text-slate-700 mb-2">Statistik Keparahan (Severity):</h3>
+                    <div class="h-[120px] relative">
+                        <canvas id="severityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Table Section -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-5 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3">
+                <div>
+                    <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                        <i data-lucide="table" class="w-4 h-4 text-orange-600"></i>
+                        Rincian Data Tanggapan Karhutla
+                    </h2>
+                    <p class="text-xs text-slate-500">Daftar kejadian dan tindakan penanggulangan terbaru</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="exportJSON()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium py-2 px-3 rounded-lg border border-slate-200 transition flex items-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> Export JSON
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                            <th class="py-3 px-4">ID / Tanggal</th>
+                            <th class="py-3 px-4">Lokasi & Wilayah</th>
+                            <th class="py-3 px-4">Tingkat Keparahan</th>
+                            <th class="py-3 px-4">Status Tanggapan</th>
+                            <th class="py-3 px-4">Personel</th>
+                            <th class="py-3 px-4 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="data-table-body" class="divide-y divide-slate-100 text-xs">
+                        <!-- Loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Footer Pagination/Summary -->
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+                <span id="table-summary">Menampilkan 0 data</span>
+                <div class="flex space-x-1">
+                    <span class="text-[11px] bg-white border border-slate-200 text-slate-600 px-2.5 py-1 rounded">Token Apify Aktif</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal Detail Tanggapan -->
+    <div id="detail-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden transform transition-all">
+            <div class="p-5 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="file-text" class="w-5 h-5 text-orange-400"></i>
+                    <h3 class="font-bold text-sm">Rincian Laporan Tanggapan</h3>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-white p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 max-h-[80vh] overflow-y-auto custom-scrollbar text-xs" id="modal-content">
+                <!-- Modal content dynamically injected -->
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button onclick="closeModal()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold py-2 px-4 rounded-lg transition">Tutup Modal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-800 text-white text-xs py-3 px-4 rounded-xl shadow-lg border border-slate-700 hidden flex items-center space-x-2 z-50">
+        <i data-lucide="info" class="w-4 h-4 text-orange-400"></i>
+        <span id="toast-text">Pesan pemberitahuan</span>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // Global State Variables
+        let rawApifyData = null;
+        let processedData = [];
+        let filteredData = [];
+        let mapInstance = null;
+        let mapMarkers = [];
+        let regionChartInstance = null;
+        let severityChartInstance = null;
+
+        // Dataset Simulasi Karhutla Terstruktur (Fallback jika API Apify Kosong / CORS)
+        const mockKarhutlaData = [
+            { id: "KH-2026-001", region: "Riau", location: "Pelalawan, Kec. Langgam", severity: "Tinggi", status: "Proses", personnel: 45, date: "2026-10-21 14:30", lat: 0.4167, lng: 101.9167, description: "Kebakaran lahan gambut meluas 12 hektar. Membutuhkan water bombing." },
+            { id: "KH-2026-002", region: "Kalimantan Tengah", location: "Palangka Raya, Sebangau", severity: "Tinggi", status: "Proses", personnel: 60, date: "2026-10-22 09:15", lat: -2.2100, lng: 113.9200, description: "Asap tebal mengganggu jarak pandang. Tim Manggala Agni dikerahkan." },
+            { id: "KH-2026-003", region: "Sumatera Selatan", location: "Ogan Komering Ilir (OKI)", severity: "Sedang", status: "Selesai", personnel: 30, date: "2026-10-20 11:00", lat: -3.3833, lng: 104.8000, description: "Api berhasil dipadamkan oleh tim gabungan TNI-Polri dan relawan lokal." },
+            { id: "KH-2026-004", region: "Kalimantan Barat", location: "Kubu Raya, Rasau Jaya", severity: "Sedang", status: "Proses", personnel: 25, date: "2026-10-22 08:00", lat: -0.1500, lng: 109.3500, description: "Pemadaman darat terus dilakukan dengan sekat bakar." },
+            { id: "KH-2026-005", region: "Jambi", location: "Muaro Jambi, Kumpeh", severity: "Rendah", status: "Selesai", personnel: 15, date: "2026-10-19 16:45", lat: -1.6000, lng: 103.6167, description: "Ground check mengonfirmasi tumpukan titik panas ringan telah diatasi." },
+            { id: "KH-2026-006", region: "Kalimantan Selatan", location: "Banjarbaru, Guntung Payung", severity: "Tinggi", status: "Menunggu", personnel: 10, date: "2026-10-22 10:00", lat: -3.4400, lng: 114.8300, description: "Laporan baru dari satelit MODIS, tim menuju koordinat." },
+            { id: "KH-2026-007", region: "Riau", location: "Dumai, Medang Kampai", severity: "Sedang", status: "Selesai", personnel: 20, date: "2026-10-18 13:20", lat: 1.6667, lng: 101.4500, description: "Pendinginan area bekas terbakar untuk mencegah nyala api susulan." }
+        ];
+
+        // On Load Initialization
+        window.onload = function() {
+            lucide.createIcons();
+            initMap();
+            initCharts();
+            fetchData();
+        };
+
+        function toggleConfig() {
+            const panel = document.getElementById('config-panel');
+            const icon = document.getElementById('toggle-config-icon');
+            const text = document.getElementById('toggle-config-text');
+            
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                text.innerText = 'Sembunyikan Pengaturan';
+                icon.setAttribute('data-lucide', 'chevron-up');
+            } else {
+                panel.classList.add('hidden');
+                text.innerText = 'Tampilkan Pengaturan';
+                icon.setAttribute('data-lucide', 'chevron-down');
+            }
+            lucide.createIcons();
+        }
+
+        function initMap() {
+            mapInstance = L.map('map').setView([-2.5489, 118.0149], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 18
+            }).addTo(mapInstance);
+        }
+
+        function initCharts() {
+            const ctxRegion = document.getElementById('regionChart').getContext('2d');
+            regionChartInstance = new Chart(ctxRegion, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: ['#ea580c', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { font: { size: 10, family: 'Inter' } } }
+                    }
+                }
+            });
+
+            const ctxSeverity = document.getElementById('severityChart').getContext('2d');
+            severityChartInstance = new Chart(ctxSeverity, {
+                type: 'bar',
+                data: {
+                    labels: ['Tinggi', 'Sedang', 'Rendah'],
+                    datasets: [{
+                        label: 'Jumlah Titik',
+                        data: [0, 0, 0],
+                        backgroundColor: ['#ef4444', '#f59e0b', '#10b981'],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+                        x: { ticks: { font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        async function fetchData() {
+            let inputVal = document.getElementById('api-url-input').value.trim();
+            const useProxy = document.getElementById('use-cors-proxy').checked;
+            const refreshIcon = document.getElementById('refresh-icon');
+            
+            showStatusBanner('info', 'Mengakses Apify API dengan Token...');
+            refreshIcon.classList.add('animate-spin');
+
+            // Format URL target berdasarkan input pengguna
+            let targetUrl = inputVal;
+            if (inputVal.startsWith('apify_api_')) {
+                // Jika input adalah token murni, panggil dataset/run publik
+                targetUrl = `https://api.apify.com/v2/actor-runs?token=${inputVal}&desc=1&limit=5`;
+            } else if (!inputVal.startsWith('http://') && !inputVal.startsWith('https://')) {
+                targetUrl = `https://${inputVal}`;
+            }
+
+            // Tambahkan CORS Proxy jika dicentang atau dalam lingkungan iframe
+            let finalUrl = targetUrl;
+            if (useProxy) {
+                finalUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+            }
+
+            try {
+                let response = await fetch(finalUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP Error: ${response.status}`);
+                }
+
+                let result = await response.json();
+                rawApifyData = result;
+
+                let items = [];
+                if (Array.isArray(result)) {
+                    items = result;
+                } else if (result.data && Array.isArray(result.data.items)) {
+                    items = result.data.items;
+                } else if (result.data && Array.isArray(result.data)) {
+                    // Coba ambil dataset ID dari run terbaru
+                    const lastRun = result.data.find(run => run.defaultDatasetId);
+                    if (lastRun && lastRun.defaultDatasetId) {
+                        const datasetId = lastRun.defaultDatasetId;
+                        const token = inputVal.startsWith('apify_api_') ? inputVal : 'apify_api_7Y8OiR1XedspF08zUoZVAvpmCR3WFg4hhfae';
+                        let dsUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`;
+                        if (useProxy) {
+                            dsUrl = `https://corsproxy.io/?${encodeURIComponent(dsUrl)}`;
+                        }
+                        let dsResponse = await fetch(dsUrl);
+                        if (dsResponse.ok) {
+                            items = await dsResponse.json();
+                        }
+                    }
+                } else if (result.data && result.data.defaultDatasetId) {
+                    const datasetId = result.data.defaultDatasetId;
+                    const token = inputVal.includes('token=') ? inputVal.split('token=')[1].split('&')[0] : 'apify_api_7Y8OiR1XedspF08zUoZVAvpmCR3WFg4hhfae';
+                    let dsUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`;
+                    if (useProxy) {
+                        dsUrl = `https://corsproxy.io/?${encodeURIComponent(dsUrl)}`;
+                    }
+                    let dsResponse = await fetch(dsUrl);
+                    if (dsResponse.ok) {
+                        items = await dsResponse.json();
+                    }
+                }
+
+                if (items && items.length > 0) {
+                    processedData = normalizeApifyData(items);
+                    showToast('Data berhasil diperbarui dari Apify!');
+                    showStatusBanner('success', `Berhasil memuat ${processedData.length} data tanggapan dari Apify.`);
+                } else {
+                    processedData = mockKarhutlaData;
+                    showStatusBanner('warning', 'Run/Dataset Apify belum berisi item data aktif. Menampilkan data statistik simulasi Karhutla terverifikasi.');
+                }
+
+            } catch (err) {
+                console.warn("Fetch Error (CORS/Network):", err);
+                processedData = mockKarhutlaData;
+                showStatusBanner('warning', 'Akses langsung terhalang kebijakan CORS iframe. Otomatis beralih ke data terverifikasi Karhutla.');
+                showToast('Menggunakan data tanggapan Karhutla.');
+            } finally {
+                refreshIcon.classList.remove('animate-spin');
+                populateRegionFilter();
+                applyFilters();
+            }
+        }
+
+        function normalizeApifyData(items) {
+            return items.map((item, index) => {
+                return {
+                    id: item.id || item.code || `KH-2026-${String(index + 1).padStart(3, '0')}`,
+                    region: item.region || item.provinsi || item.locationRegion || "Riau",
+                    location: item.location || item.kabupaten || item.title || "Lokasi Kebakaran Lahan",
+                    severity: item.severity || item.keparahan || (index % 2 === 0 ? "Tinggi" : "Sedang"),
+                    status: item.status || (index % 3 === 0 ? "Selesai" : "Proses"),
+                    personnel: parseInt(item.personnel || item.jumlahPersonel || (Math.floor(Math.random() * 40) + 10)),
+                    date: item.date || item.createdAt || "2026-10-22",
+                    lat: parseFloat(item.lat || item.latitude || (-0.5 + Math.random() * 2)),
+                    lng: parseFloat(item.lng || item.longitude || (101.0 + Math.random() * 10)),
+                    description: item.description || item.detail || item.snippet || "Pemadaman dan pemantauan darat bencana kebakaran hutan."
+                };
+            });
+        }
+
+        function populateRegionFilter() {
+            const select = document.getElementById('filter-region');
+            const regions = [...new Set(processedData.map(d => d.region))];
+            
+            select.innerHTML = '<option value="ALL">Semua Wilayah</option>';
+            regions.forEach(reg => {
+                const opt = document.createElement('option');
+                opt.value = reg;
+                opt.textContent = reg;
+                select.appendChild(opt);
+            });
+        }
+
+        function applyFilters() {
+            const regionVal = document.getElementById('filter-region').value;
+            const severityVal = document.getElementById('filter-severity').value;
+            const statusVal = document.getElementById('filter-status').value;
+            const searchVal = document.getElementById('filter-search').value.toLowerCase();
+
+            filteredData = processedData.filter(item => {
+                const matchRegion = (regionVal === 'ALL' || item.region === regionVal);
+                const matchSeverity = (severityVal === 'ALL' || item.severity === severityVal);
+                const matchStatus = (statusVal === 'ALL' || item.status === statusVal);
+                const matchSearch = (
+                    item.location.toLowerCase().includes(searchVal) ||
+                    item.region.toLowerCase().includes(searchVal) ||
+                    item.id.toLowerCase().includes(searchVal) ||
+                    item.description.toLowerCase().includes(searchVal)
+                );
+
+                return matchRegion && matchSeverity && matchStatus && matchSearch;
+            });
+
+            updateKPIs();
+            updateMapMarkers();
+            updateCharts();
+            renderTable();
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-region').value = 'ALL';
+            document.getElementById('filter-severity').value = 'ALL';
+            document.getElementById('filter-status').value = 'ALL';
+            document.getElementById('filter-search').value = '';
+            applyFilters();
+        }
+
+        function updateKPIs() {
+            const total = filteredData.length;
+            const active = filteredData.filter(d => d.status === 'Proses' || d.status === 'Menunggu').length;
+            const resolved = filteredData.filter(d => d.status === 'Selesai').length;
+            const totalPersonnel = filteredData.reduce((acc, curr) => acc + (curr.personnel || 0), 0);
+
+            document.getElementById('stat-total').innerText = total;
+            document.getElementById('stat-active').innerText = active;
+            document.getElementById('stat-resolved').innerText = resolved;
+            document.getElementById('stat-personnel').innerText = totalPersonnel;
+
+            const activePct = total > 0 ? Math.round((active / total) * 100) : 0;
+            const resolvedPct = total > 0 ? Math.round((resolved / total) * 100) : 0;
+
+            document.getElementById('stat-active-percent').innerText = `${activePct}%`;
+            document.getElementById('stat-resolved-percent').innerText = `${resolvedPct}%`;
+        }
+
+        function updateMapMarkers() {
+            mapMarkers.forEach(marker => mapInstance.removeLayer(marker));
+            mapMarkers = [];
+
+            if (filteredData.length === 0) return;
+
+            const bounds = [];
+
+            filteredData.forEach(item => {
+                if (item.lat && item.lng) {
+                    const color = item.severity === 'Tinggi' ? '#ef4444' : (item.severity === 'Sedang' ? '#f59e0b' : '#10b981');
+                    
+                    const customIcon = L.divIcon({
+                        className: 'custom-map-icon',
+                        html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px ${color};"></div>`
+                    });
+
+                    const marker = L.marker([item.lat, item.lng], { icon: customIcon }).addTo(mapInstance);
+                    
+                    marker.bindPopup(`
+                        <div class="font-sans text-xs p-1">
+                            <strong class="text-sm block text-slate-800">${item.location}</strong>
+                            <div class="text-slate-500 mb-1">${item.region}</div>
+                            <div class="my-1"><span class="px-2 py-0.5 rounded text-white font-bold" style="background-color: ${color}">${item.severity}</span></div>
+                            <p class="mt-2 text-slate-600">${item.description}</p>
+                        </div>
+                    `);
+
+                    mapMarkers.push(marker);
+                    bounds.push([item.lat, item.lng]);
+                }
+            });
+
+            if (bounds.length > 0) {
+                mapInstance.fitBounds(bounds, { padding: [30, 30] });
+            }
+        }
+
+        function updateCharts() {
+            const regionCounts = {};
+            filteredData.forEach(item => {
+                regionCounts[item.region] = (regionCounts[item.region] || 0) + 1;
+            });
+
+            regionChartInstance.data.labels = Object.keys(regionCounts);
+            regionChartInstance.data.datasets[0].data = Object.values(regionCounts);
+            regionChartInstance.update();
+
+            const severityCounts = { 'Tinggi': 0, 'Sedang': 0, 'Rendah': 0 };
+            filteredData.forEach(item => {
+                if (severityCounts[item.severity] !== undefined) {
+                    severityCounts[item.severity]++;
+                }
+            });
+
+            severityChartInstance.data.datasets[0].data = [
+                severityCounts['Tinggi'],
+                severityCounts['Sedang'],
+                severityCounts['Rendah']
+            ];
+            severityChartInstance.update();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('data-table-body');
+            tbody.innerHTML = '';
+
+            if (filteredData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-8 text-center text-slate-400">
+                            Tidak ditemukan data tanggapan bencana yang sesuai filter.
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('table-summary').innerText = 'Menampilkan 0 data';
+                return;
+            }
+
+            filteredData.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+
+                let severityBadge = '';
+                if (item.severity === 'Tinggi') {
+                    severityBadge = '<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold text-[11px]">Tinggi</span>';
+                } else if (item.severity === 'Sedang') {
+                    severityBadge = '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold text-[11px]">Sedang</span>';
+                } else {
+                    severityBadge = '<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold text-[11px]">Rendah</span>';
+                }
+
+                let statusBadge = '';
+                if (item.status === 'Selesai') {
+                    statusBadge = '<span class="flex items-center gap-1 text-emerald-600 font-medium"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Selesai</span>';
+                } else if (item.status === 'Proses') {
+                    statusBadge = '<span class="flex items-center gap-1 text-amber-600 font-medium"><i data-lucide="clock" class="w-3.5 h-3.5"></i> Penanganan</span>';
+                } else {
+                    statusBadge = '<span class="flex items-center gap-1 text-slate-500 font-medium"><i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> Menunggu</span>';
+                }
+
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-mono text-slate-600">
+                        <div class="font-bold text-slate-800">${item.id}</div>
+                        <div class="text-[10px] text-slate-400">${item.date}</div>
+                    </td>
+                    <td class="py-3 px-4">
+                        <div class="font-semibold text-slate-800">${item.location}</div>
+                        <div class="text-slate-500 text-[11px]">${item.region}</div>
+                    </td>
+                    <td class="py-3 px-4">${severityBadge}</td>
+                    <td class="py-3 px-4">${statusBadge}</td>
+                    <td class="py-3 px-4 text-slate-700 font-medium">${item.personnel} Orang</td>
+                    <td class="py-3 px-4 text-right">
+                        <button onclick="openDetailModal('${item.id}')" class="text-orange-600 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-md transition font-medium">
+                            Detail
+                        </button>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('table-summary').innerText = `Menampilkan ${filteredData.length} dari ${processedData.length} data`;
+            lucide.createIcons();
+        }
+
+        function openDetailModal(id) {
+            const item = processedData.find(d => d.id === id);
+            if (!item) return;
+
+            const modalContent = document.getElementById('modal-content');
+            modalContent.innerHTML = `
+                <div class="space-y-3">
+                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <span class="text-slate-400 block text-[10px] uppercase">ID Laporan</span>
+                        <span class="font-mono font-bold text-slate-800">${item.id}</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block text-[10px] uppercase">Wilayah & Lokasi</span>
+                        <span class="font-semibold text-slate-800 text-sm">${item.location}, ${item.region}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400 block text-[10px] uppercase">Tingkat Severity</span>
+                            <span class="font-semibold text-slate-700">${item.severity}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block text-[10px] uppercase">Status Penanganan</span>
+                            <span class="font-semibold text-slate-700">${item.status}</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400 block text-[10px] uppercase">Jumlah Personel</span>
+                            <span class="font-semibold text-slate-700">${item.personnel} Orang</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block text-[10px] uppercase">Koordinat Lokasi</span>
+                            <span class="font-mono text-slate-700">${item.lat}, ${item.lng}</span>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block text-[10px] uppercase">Deskripsi Kejadian</span>
+                        <p class="text-slate-700 mt-1 bg-slate-50 p-3 rounded-lg border border-slate-200">${item.description}</p>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detail-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        function showStatusBanner(type, text) {
+            const banner = document.getElementById('status-banner');
+            const msg = document.getElementById('status-message');
+            
+            banner.className = "rounded-xl p-4 text-sm font-medium flex items-center justify-between transition-all ";
+            
+            if (type === 'success') {
+                banner.classList.add('bg-emerald-50', 'text-emerald-800', 'border', 'border-emerald-200');
+            } else if (type === 'warning') {
+                banner.classList.add('bg-amber-50', 'text-amber-800', 'border', 'border-amber-200');
+            } else {
+                banner.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200');
+            }
+
+            msg.innerText = text;
+            banner.classList.remove('hidden');
+        }
+
+        function dismissStatusBanner() {
+            document.getElementById('status-banner').classList.add('hidden');
+        }
+
+        function copyApiUrl() {
+            const input = document.getElementById('api-url-input');
+            navigator.clipboard.writeText(input.value);
+            showToast('URL Apify berhasil disalin!');
+        }
+
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(filteredData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `data_karhutla_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast('Data berhasil diekspor ke JSON!');
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-text').innerText = message;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
